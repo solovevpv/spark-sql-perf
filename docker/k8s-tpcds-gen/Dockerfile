@@ -29,7 +29,7 @@ FROM debian:12-slim AS dsdgen-builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       git gcc make flex bison byacc ca-certificates curl \
+       git gcc libc6-dev make flex bison byacc ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 https://github.com/databricks/tpcds-kit.git /tmp/tpcds-kit \
