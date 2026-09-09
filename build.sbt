@@ -43,6 +43,11 @@ libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.8" % "test"
 
 libraryDependencies += "org.yaml" % "snakeyaml" % "1.23"
 
+assemblyMergeStrategy in assembly := {
+  case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+  case _ => MergeStrategy.first
+}
+
 fork := true
 
 // Your username to login to Databricks Cloud
