@@ -13,6 +13,10 @@
 # spark-submit's --conf spark.kubernetes.container.image=... — no custom
 # ENTRYPOINT is set here, the base Spark image's own entrypoint is kept.
 
+# ARGs used in a FROM line must be declared before the FIRST FROM in the
+# file to be visible there — declaring it between stages does not work.
+ARG SPARK_BASE_IMAGE=apache/spark:3.5.8
+
 # ---------------------------------------------------------------------------
 # Stage 1: build dsdgen, the TPC-DS data generator.
 #
@@ -25,17 +29,27 @@ FROM debian:12-slim AS dsdgen-builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       git gcc make flex bison byacc ca-certificates \
+       git gcc make flex bison byacc ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 https://github.com/databricks/tpcds-kit.git /tmp/tpcds-kit \
     && cd /tmp/tpcds-kit/tools \
     && make OS=LINUX
 
+# S3A connector for writing the generated data to an S3 bucket. Fetched here
+# rather than in stage 2 because the official apache/spark image does not
+# ship curl/wget. Skip/remove this if your base image already has these jars.
+ARG HADOOP_AWS_VERSION=3.3.4
+ARG AWS_SDK_BUNDLE_VERSION=1.12.262
+RUN mkdir -p /tmp/s3a-jars \
+    && curl -fsSLo /tmp/s3a-jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
+      https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
+    && curl -fsSLo /tmp/s3a-jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar \
+      https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VERSION}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar
+
 # ---------------------------------------------------------------------------
 # Stage 2: extend the existing Spark 3.5.8 image
 # ---------------------------------------------------------------------------
-ARG SPARK_BASE_IMAGE=apache/spark:3.5.8
 FROM ${SPARK_BASE_IMAGE}
 
 # Official Spark images run as a non-root user; switch to root to install
@@ -43,15 +57,7 @@ FROM ${SPARK_BASE_IMAGE}
 USER root
 
 ARG SPARK_HOME=/opt/spark
-ARG HADOOP_AWS_VERSION=3.3.4
-ARG AWS_SDK_BUNDLE_VERSION=1.12.262
-
-# S3A connector for writing the generated data to an S3 bucket.
-# Skip/remove this if the base image already ships these jars.
-RUN curl -fsSLo ${SPARK_HOME}/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
-      https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
-    && curl -fsSLo ${SPARK_HOME}/jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar \
-      https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VERSION}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VERSION}.jar
+COPY --from=dsdgen-builder /tmp/s3a-jars/ ${SPARK_HOME}/jars/
 
 # dsdgen binary + its .dst templates. This MUST live at the same path on
 # every pod that runs a dsdgen partition (all of them, since generation is
