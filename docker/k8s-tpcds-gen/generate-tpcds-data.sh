@@ -24,6 +24,13 @@ set -euo pipefail
 # or uncomment the two spark.hadoop.fs.s3a.access.key/secret.key --conf lines
 # below and pass them explicitly instead.
 #
+# The fact tables are partitioned by date — ~1800 partitions each even at
+# scale factor 1 — and the default commit algorithm (v1) finishes a job by
+# renaming every output file, which on object storage is a server-side
+# COPY+DELETE done serially on the driver. Algorithm v2 has each task commit
+# straight to its final location instead. The tradeoff: v2 is not atomic, so a
+# task failing mid-commit leaves partial output and the run has to be redone.
+#
 # GenTPCDSData passes its own -m value to SparkSession.builder().master(),
 # overriding whatever spark-submit configured, and defaults it to "local[*]".
 # Without -m the driver silently runs in local mode: no executor pods are
@@ -47,6 +54,7 @@ spark-submit \
   --conf spark.hadoop.fs.s3a.path.style.access=true \
   --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider \
+  --conf spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version=2 \
   local:///opt/spark-sql-perf/spark-sql-perf-assembly.jar \
   -m "${K8S_MASTER}" \
   -d "${DSDGEN_DIR:-/opt/tpcds-kit/tools}" \
