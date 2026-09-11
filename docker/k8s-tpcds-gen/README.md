@@ -66,3 +66,34 @@ credentials to the driver/executor pods (Kubernetes Secret, or the
 
 `-s` is the TPC-DS scale factor in GB; `-n` controls how many dsdgen
 partitions/tasks are used to parallelize generation.
+
+## 4. Analyze a run
+
+`analyze-gen-run.sh` turns a driver log into per-table timings, separating the
+time spent generating and writing rows from the time spent committing — on
+object storage the commit is often the larger half, and the driver logs it as a
+single silent gap:
+
+```
+./analyze-gen-run.sh driver.log
+./analyze-gen-run.sh -p <driver-pod> -n spark-workload
+```
+
+Driver pods are short-lived, so keep the log to compare runs later:
+`kubectl logs -n <ns> <driver-pod> > run-sf1-$(date +%F-%H%M).log`
+
+`analyze-gen-output.sh` reports the shape of the result — files, partition
+directories, and average file size per table — and flags leftover `_temporary`
+from an interrupted run. It reads `<bytes> <key>` lines on stdin so it works
+with any S3 client (see the header for `aws` and `mc` forms):
+
+```
+S3_ENDPOINT=https://minio.example ./analyze-gen-output.sh -a s3://spark-k8s/tpcds_1/
+```
+
+Average file size is the number to watch. A date-partitioned fact table spreads
+a small scale factor across ~1800 partitions, so at SF1 each file is around half
+a megabyte and the write is dominated by per-object overhead rather than by
+bytes; the same partition count at SF1000 produces healthy files. If that is
+where the time goes at a small scale factor, `-p false` disables partitioning —
+at the cost of a layout no longer representative for partition-pruning queries.
