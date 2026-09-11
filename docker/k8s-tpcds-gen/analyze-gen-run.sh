@@ -86,10 +86,18 @@ function dur(s,   m) {
 
 /SparkContext: Running Spark version/ { sparkver = $NF }
 /Submitted application:/            { app = $NF }
+# The allocator requests executors in batches, so a single line understates the
+# total; "target" carries the number actually being aimed for.
 /Going to request .* executors from Kubernetes/ {
-  for (i = 1; i < NF; i++) if ($i == "request") { nexec = $(i+1); break }
+  if (match($0, /target: [0-9]+/)) {
+    s = substr($0, RSTART, RLENGTH); split(s, a, ": ")
+    if (a[2] + 0 > nexec + 0) nexec = a[2]
+  } else {
+    for (i = 1; i < NF; i++) if ($i == "request" && $(i+1) + 0 > nexec + 0) { nexec = $(i+1); break }
+  }
 }
-/executor resources: Map\(cores/ {
+# Scala does not order Map keys, so match each field wherever it lands.
+/executor resources: Map\(/ {
   if (match($0, /cores, amount: [0-9]+/))  { s = substr($0, RSTART, RLENGTH); split(s, a, ": "); ecores = a[2] }
   if (match($0, /memory, amount: [0-9]+/)) { s = substr($0, RSTART, RLENGTH); split(s, a, ": "); emem = a[2] }
 }
