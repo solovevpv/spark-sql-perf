@@ -23,6 +23,12 @@ set -euo pipefail
 # executor pods (e.g. via a Kubernetes Secret + envFrom on the pod template),
 # or uncomment the two spark.hadoop.fs.s3a.access.key/secret.key --conf lines
 # below and pass them explicitly instead.
+#
+# GenTPCDSData passes its own -m value to SparkSession.builder().master(),
+# overriding whatever spark-submit configured, and defaults it to "local[*]".
+# Without -m the driver silently runs in local mode: no executor pods are
+# created and its BlockManager loops on "Cannot find endpoint:
+# spark://CoarseGrainedScheduler@...-driver-svc...". Hence -m below.
 
 spark-submit \
   --master "${K8S_MASTER}" \
@@ -42,6 +48,7 @@ spark-submit \
   --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider \
   local:///opt/spark-sql-perf/spark-sql-perf-assembly.jar \
+  -m "${K8S_MASTER}" \
   -d "${DSDGEN_DIR:-/opt/tpcds-kit/tools}" \
   -s "${SCALE_FACTOR}" \
   -l "${S3_BUCKET}" \
