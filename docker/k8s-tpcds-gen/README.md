@@ -33,6 +33,24 @@ Adjust `SPARK_BASE_IMAGE` to whatever Spark 3.5.8 image your Deckhouse cluster
 already uses. If that image already ships `hadoop-aws`/`aws-java-sdk-bundle`,
 drop that `RUN curl ...` block from the Dockerfile.
 
+## 2b. Rebase onto another Spark image (optional)
+
+To put the same artifacts on a different Spark image — one with your own CA
+bundle, Iceberg, S3 setup — use `Dockerfile.rebase`, which copies dsdgen and the
+assembly jar out of the image built above instead of rebuilding them:
+
+```
+podman build -f docker/k8s-tpcds-gen/Dockerfile.rebase \
+  --build-arg TPCDS_SRC_IMAGE=<registry>/spark-tpcds-gen:3.5.8 \
+  --build-arg SPARK_BASE_IMAGE=<registry>/spark:<tag> \
+  -t <registry>/spark-tpcds-gen:<tag> .
+```
+
+It compiles and downloads nothing and ignores the build context, so it runs in a
+network-isolated environment. It also skips the S3A jars on purpose — a Spark
+image that already talks to S3 has its own, and a second copy at a different
+version breaks the classpath.
+
 ## 3. Run data generation
 
 Edit the environment variables at the top of `generate-tpcds-data.sh`

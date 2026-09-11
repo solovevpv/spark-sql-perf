@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1
+#
+# Rebases the TPC-DS generation artifacts — dsdgen and the spark-sql-perf
+# assembly jar — from an image already built with ./Dockerfile onto a different
+# Spark image (e.g. one that carries an organization's own CA bundle, Iceberg,
+# and S3 setup).
+#
+# Nothing is compiled or downloaded here and the build context is unused, so
+# this works inside a network-isolated environment as long as both images are
+# available locally or in a reachable registry:
+#
+#   podman build -f docker/k8s-tpcds-gen/Dockerfile.rebase \
+#     --build-arg TPCDS_SRC_IMAGE=<registry>/spark-tpcds-gen:3.5.8 \
+#     --build-arg SPARK_BASE_IMAGE=<registry>/spark:<tag> \
+#     -t <registry>/spark-tpcds-gen:<tag> .
+#
+# Deliberately NOT copied: the hadoop-aws / aws-java-sdk-bundle jars that
+# ./Dockerfile installs. A Spark image that already reads and writes S3 ships
+# its own; a second copy at a different version breaks the classpath.
+
+ARG TPCDS_SRC_IMAGE=apache/spark-tpcds-gen:3.5.8
+ARG SPARK_BASE_IMAGE=apache/spark:3.5.8
+
+FROM ${TPCDS_SRC_IMAGE} AS tpcds-artifacts
+
+FROM ${SPARK_BASE_IMAGE}
+
+USER root
+
+# dsdgen must sit at the same path on every driver and executor pod; baking it
+# into the shared image is what satisfies that.
+ENV DSDGEN_DIR=/opt/tpcds-kit/tools
+COPY --from=tpcds-artifacts /opt/tpcds-kit/tools/ ${DSDGEN_DIR}/
+COPY --from=tpcds-artifacts /opt/spark-sql-perf/ /opt/spark-sql-perf/
+
+# Readable by any UID rather than chowned to one: the base image's runtime user
+# is whatever that image chose, and RUNTIME_USER below may not match it.
+RUN chmod -R a+rX /opt/tpcds-kit /opt/spark-sql-perf \
+    && chmod a+x ${DSDGEN_DIR}/dsdgen
+
+# Spark images conventionally run as UID 185; override if the base differs
+# (check with: podman inspect --format='{{.Config.User}}' <base image>).
+ARG RUNTIME_USER=185
+USER ${RUNTIME_USER}
