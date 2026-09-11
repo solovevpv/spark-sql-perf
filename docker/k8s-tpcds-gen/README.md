@@ -13,7 +13,11 @@ Builds an image on top of an existing Spark 3.5.8 image with:
 build/sbt assembly
 ```
 
-Produces `target/scala-2.13/spark-sql-perf-assembly-<version>.jar`.
+Produces `target/scala-2.12/spark-sql-perf-assembly-<version>.jar`.
+`build.sbt` is pinned to Scala 2.12.18 to match the Scala version the
+`apache/spark:3.5.8` image itself is built with — Scala 2.12 and 2.13 are
+not binary-compatible, so building against 2.13 fails at runtime with
+`NoSuchMethodError`.
 
 ## 2. Build and push the image
 

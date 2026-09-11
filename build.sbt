@@ -5,16 +5,20 @@ name := "spark-sql-perf"
 
 organization := "com.databricks"
 
-scalaVersion := "2.13.8"
+// Must match the Scala version the target Spark distribution is built
+// with (Spark 3.5.x's apache/spark:3.5.8 image is a Scala 2.12 build) —
+// Scala 2.12 and 2.13 are not binary-compatible, mixing them causes
+// NoSuchMethodError at runtime.
+scalaVersion := "2.12.18"
 
-crossScalaVersions := Seq("2.13.8")
+crossScalaVersions := Seq("2.12.18")
 
 sparkPackageName := "databricks/spark-sql-perf"
 
 // All Spark Packages need a license
 licenses := Seq("Apache-2.0" -> url("http://opensource.org/licenses/Apache-2.0"))
 
-sparkVersion := "3.3.0"
+sparkVersion := "3.5.8"
 
 sparkComponents ++= Seq("sql", "mllib")
 

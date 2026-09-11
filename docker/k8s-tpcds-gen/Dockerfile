@@ -69,8 +69,9 @@ RUN chmod +x ${DSDGEN_DIR}/dsdgen
 
 # spark-sql-perf assembly jar.
 # Build it first with: build/sbt assembly
-# (produces target/scala-2.13/spark-sql-perf-assembly-<version>.jar)
-COPY target/scala-2.13/spark-sql-perf-assembly-*.jar /opt/spark-sql-perf/spark-sql-perf-assembly.jar
+# (produces target/scala-2.12/spark-sql-perf-assembly-<version>.jar —
+# scala-2.12 to match the Scala version the base Spark image is built with)
+COPY target/scala-2.12/spark-sql-perf-assembly-*.jar /opt/spark-sql-perf/spark-sql-perf-assembly.jar
 
 # Official Spark images run pods as UID 185; adjust if your base image differs.
 RUN chown -R 185:185 /opt/tpcds-kit /opt/spark-sql-perf
