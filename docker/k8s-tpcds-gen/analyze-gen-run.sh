@@ -41,7 +41,7 @@ else
   exit 2
 fi
 
-awk '
+awk -v TOPN=8 '
 function tsec(t,   a) { split(t, a, ":"); return a[1]*3600 + a[2]*60 + a[3] }
 
 # Log timestamps carry no date, so a run crossing midnight is detected by the
@@ -51,6 +51,17 @@ function abstime(t,   s) {
   if (seen_time && s < last_s) day++
   last_s = s; seen_time = 1
   return day * 86400 + s
+}
+
+# Keep only the top TOPN entries as the log is read. A large run logs hundreds
+# of thousands of task lines, so collecting them all and sorting at the end is
+# what makes the difference between a second and not finishing.
+function top_push(val, label, n, vals, labels,   i) {
+  if (n[0] < TOPN) n[0]++
+  else if (val <= vals[n[0]]) return
+  i = n[0]
+  while (i > 1 && vals[i-1] < val) { vals[i] = vals[i-1]; labels[i] = labels[i-1]; i-- }
+  vals[i] = val; labels[i] = label
 }
 
 function dur(s,   m) {
@@ -101,8 +112,11 @@ function dur(s,   m) {
   if (match($0, /cores, amount: [0-9]+/))  { s = substr($0, RSTART, RLENGTH); split(s, a, ": "); ecores = a[2] }
   if (match($0, /memory, amount: [0-9]+/)) { s = substr($0, RSTART, RLENGTH); split(s, a, ": "); emem = a[2] }
 }
-/File Output Committer Algorithm version is/ { committer = $NF }
-/fs\.s3a\.committer\.name|committer.name=magic/ { magic = 1 }
+/File Output Committer Algorithm version is/ { if (!committer) committer = "FileOutputCommitter v" $NF }
+# The S3A committers announce themselves differently from the Hadoop one.
+/AbstractS3ACommitterFactory: Using committer/ {
+  for (i = 1; i < NF; i++) if ($i == "committer") { committer = $(i+1) " (S3A)"; break }
+}
 /SparkContext is stopping with exitCode/ { exitcode = $NF; sub(/\.$/, "", exitcode) }
 
 /Pre-clustering with partitioning columns/ { next_is_partitioned = 1 }
@@ -125,7 +139,7 @@ function dur(s,   m) {
 /DAGScheduler: .*Stage [0-9]+ .*finished in [0-9.]+ s/ {
   for (i = 1; i < NF; i++) if ($i == "in" && $(i+2) == "s") { secs = $(i+1); break }
   st = $6; sub(/[^0-9]/, "", st)
-  sn++; sname[sn] = $5 " " st; ssec[sn] = secs + 0
+  top_push(secs + 0, $5 " " st, stage_n, stage_val, stage_lbl)
 }
 
 /Finished task .* in stage .* in [0-9]+ ms/ {
@@ -133,7 +147,7 @@ function dur(s,   m) {
     if ($i == "stage") stg = $(i+1)
     if ($i == "in" && $(i+1) ~ /^[0-9]+$/ && $(i+2) == "ms") ms = $(i+1)
   }
-  tn++; tkstage[tn] = stg; tkms[tn] = ms + 0
+  top_push(ms + 0, stg, task_n, task_val, task_lbl)
 }
 
 END {
@@ -142,7 +156,7 @@ END {
   printf "\nTPC-DS generation run\n"
   printf "  application    : %s\n", app ? app : "?"
   printf "  spark          : %s", sparkver ? sparkver : "?"
-  printf "   committer: algorithm v%s%s\n", committer ? committer : "?", magic ? " (magic)" : ""
+  printf "   committer: %s\n", committer ? committer : "?"
   printf "  scale factor   : %s GB", sf ? sf : "?"
   printf "   dsdgen partitions (-n): %s   format: %s", nparts ? nparts : "?", fmt ? fmt : "?"
   printf "%s\n", nopart == "false" ? "   partitioning: off" : ""
@@ -178,19 +192,11 @@ END {
   printf "  %-22s %s (%.0f%% of table time)\n", "commit total", dur(commit_total), commit_pct
 
   printf "\nSlowest stages\n"
-  for (i = 1; i <= sn; i++) sord[i] = i
-  for (i = 1; i <= sn; i++)
-    for (j = i + 1; j <= sn; j++)
-      if (ssec[sord[j]] > ssec[sord[i]]) { tmp = sord[i]; sord[i] = sord[j]; sord[j] = tmp }
-  for (k = 1; k <= sn && k <= 8; k++) printf "  %-22s %8s\n", sname[sord[k]], dur(ssec[sord[k]])
+  for (k = 1; k <= stage_n[0]; k++) printf "  %-22s %8s\n", stage_lbl[k], dur(stage_val[k])
 
   printf "\nSlowest tasks\n"
-  for (i = 1; i <= tn; i++) kord[i] = i
-  for (i = 1; i <= tn; i++)
-    for (j = i + 1; j <= tn; j++)
-      if (tkms[kord[j]] > tkms[kord[i]]) { tmp = kord[i]; kord[i] = kord[j]; kord[j] = tmp }
-  for (k = 1; k <= tn && k <= 8; k++)
-    printf "  stage %-16s %8s\n", tkstage[kord[k]], dur(tkms[kord[k]] / 1000)
+  for (k = 1; k <= task_n[0]; k++)
+    printf "  stage %-16s %8s\n", task_lbl[k], dur(task_val[k] / 1000)
   printf "\n"
 }
 ' "$LOG"
