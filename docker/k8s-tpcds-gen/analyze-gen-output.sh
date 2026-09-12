@@ -20,6 +20,21 @@
 #     | python3 -c 'import sys,json; [print(json.loads(l)["size"], json.loads(l)["key"]) for l in sys.stdin]' \
 #     | ./analyze-gen-output.sh
 #
+# With no S3 client installed — likely in an isolated environment — the Spark
+# image itself has one, along with whatever CA it was built with. Credentials
+# are passed through the environment so they stay out of the process list:
+#
+#   export AWS_ACCESS_KEY_ID=$(kubectl get secret -n spark-workload minio-secret \
+#     -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)
+#   export AWS_SECRET_ACCESS_KEY=$(kubectl get secret -n spark-workload minio-secret \
+#     -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)
+#
+#   sudo -E podman run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+#     --entrypoint java <spark image> -cp '/opt/spark/jars/*' \
+#     org.apache.hadoop.fs.FsShell -Dfs.s3a.endpoint=<endpoint> \
+#     -Dfs.s3a.path.style.access=true -ls -R s3a://bucket/prefix/ \
+#     | awk '$1 ~ /^-/ { print $5, $8 }' | ./analyze-gen-output.sh
+#
 # With -a it runs the aws form itself, using S3_ENDPOINT and a bucket path:
 #
 #   S3_ENDPOINT=https://minio.example ./analyze-gen-output.sh -a s3://spark-k8s/tpcds_1/
