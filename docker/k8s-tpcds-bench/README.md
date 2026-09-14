@@ -200,6 +200,24 @@ Useful knobs, all environment variables:
 | `LOG_LEVEL` | default `WARN`; a full run at `INFO` produces an unreadable log |
 | `EVENTLOG_ENABLED` | default `true`; set `false` if the event log size is a problem — 119 queries produce a large one |
 
+### Tuning
+
+`run-tpcds-bench.sh` takes `TUNING_CONF=<file>`, a list of `key=value` settings
+appended after its own `--conf` flags — spark-submit keeps the last value for a
+repeated key, so the file can override anything the script sets.
+
+```
+TUNING_CONF=tuning-sf1000.conf ... ./run-tpcds-bench.sh
+```
+
+`tuning-sf1000.conf` holds the candidates for SF1000 on this cluster, with the
+default value named next to each. The S3 read settings are the ones with
+evidence behind them: the smoke run spent 75-84% of task time off-CPU.
+
+Apply it against a baseline run, not instead of one, and change one group at a
+time — a whole file applied at once tells you the total and nothing about which
+setting earned it.
+
 ## 6. Results
 
 `RESULTS_PATH` produces three folders via Spark:

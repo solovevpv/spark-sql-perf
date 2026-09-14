@@ -41,6 +41,7 @@ mkdir -p "$STAGE/$NAME"
 
 cp -r wheels jars "$STAGE/$NAME/"
 cp Dockerfile build-image.sh run-tpcds-bench.sh smoke-test.sh smoke.env.example \
+   tuning-sf1000.conf \
    README.md "$STAGE/$NAME/"
 
 {

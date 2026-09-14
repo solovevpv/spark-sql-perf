@@ -42,6 +42,7 @@ set -euo pipefail
 : "${EVENTLOG_ENABLED:=true}"
 : "${MINIO_SECRET:=minio-secret}"
 : "${DRIVER_POD_NAME:=}"
+: "${TUNING_CONF:=}"
 : "${APP:=local:///opt/tpcds-python/tpcds_pyspark/tpcds_pyspark_run.py}"
 
 # Optional args are built as arrays so an unset value leaves nothing behind on
@@ -54,6 +55,22 @@ fi
 EXCLUDE_ARGS=()
 if [ -n "${QUERIES_EXCLUDE:-}" ]; then
   EXCLUDE_ARGS=(-x "$QUERIES_EXCLUDE")
+fi
+
+# An optional file of key=value settings, appended after the built-in --conf
+# flags. spark-submit keeps the last value for a repeated key, so a tuning file
+# can override anything set above it without this script being edited.
+TUNING_ARGS=()
+if [ -n "$TUNING_CONF" ]; then
+  [ -r "$TUNING_CONF" ] || { echo "cannot read $TUNING_CONF" >&2; exit 1; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    line=${line#"${line%%[![:space:]]*}"}
+    case "$line" in ''|'#'*) continue ;; esac
+    case "$line" in *=*) ;; *) echo "not key=value in $TUNING_CONF: $line" >&2; exit 1 ;; esac
+    TUNING_ARGS+=(--conf "$line")
+  done < "$TUNING_CONF"
+  echo "Applying $((${#TUNING_ARGS[@]} / 2)) settings from $TUNING_CONF" >&2
 fi
 
 # Naming the driver pod up front is what lets a caller fetch its log afterwards
@@ -94,6 +111,7 @@ spark-submit \
   --conf spark.eventLog.dir="${EVENTLOG_DIR:-s3a://spark-k8s/logs}" \
   --conf spark.hadoop.fs.s3a.endpoint="${S3_ENDPOINT}" \
   --conf spark.hadoop.fs.s3a.path.style.access=true \
+  "${TUNING_ARGS[@]}" \
   "${POD_ARGS[@]}" \
   "${APP}" \
   -d "${DATA_PATH}" \
