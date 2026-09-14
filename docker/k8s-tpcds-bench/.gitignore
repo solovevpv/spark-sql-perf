@@ -7,3 +7,6 @@ tpcds-bench-context-*.tar.gz.sha256
 # Local cluster settings and smoke run output.
 smoke.env
 smoke-*.log
+stream*.log
+driver-thr*.log
+run-sf1000-*.log

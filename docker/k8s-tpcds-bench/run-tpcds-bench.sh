@@ -12,7 +12,7 @@
 # Results go to the driver log and, with RESULTS_PATH set, through Spark to S3.
 # Set it: the driver pod and its filesystem are gone once the run ends.
 #
-# QUERIES/NUM_RUNS/REPEAT default to all 119 queries once. Upstream defaults are
+# QUERIES/NUM_RUNS/REPEAT default to all 118 queries once. Upstream defaults are
 # 2 runs x 3 repeats = 714 executions; raise REPEAT once a single pass has shown
 # how long one takes at your scale factor.
 
@@ -41,6 +41,8 @@ set -euo pipefail
 : "${LOG_LEVEL:=WARN}"
 : "${EVENTLOG_ENABLED:=true}"
 : "${MINIO_SECRET:=minio-secret}"
+: "${APP_NAME:=tpcds-bench}"
+: "${DRIVER_CORES:=2}"
 : "${DRIVER_POD_NAME:=}"
 : "${TUNING_CONF:=}"
 : "${APP:=local:///opt/tpcds-python/tpcds_pyspark/tpcds_pyspark_run.py}"
@@ -85,13 +87,13 @@ fi
 spark-submit \
   --master "${K8S_MASTER}" \
   --deploy-mode cluster \
-  --name tpcds-bench \
+  --name "${APP_NAME}" \
   --conf spark.kubernetes.container.image="${IMAGE}" \
   --conf spark.kubernetes.namespace="${K8S_NAMESPACE}" \
   --conf spark.kubernetes.authenticate.driver.serviceAccountName="${SERVICE_ACCOUNT}" \
   --conf spark.kubernetes.authenticate.submission.oauthTokenFile="${OAUTH_TOKEN_FILE}" \
   --conf spark.driver.memory="${DRIVER_MEMORY}" \
-  --conf spark.driver.cores=2 \
+  --conf spark.driver.cores="${DRIVER_CORES}" \
   --conf spark.executor.memory="${EXECUTOR_MEMORY}" \
   --conf spark.executor.memoryOverhead="${EXECUTOR_OVERHEAD}" \
   --conf spark.executor.cores="${EXECUTOR_CORES}" \

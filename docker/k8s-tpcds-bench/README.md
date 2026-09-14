@@ -93,7 +93,7 @@ worth having — compares the base image's Python against the ABI the wheels wer
 built for. A mismatch there builds cleanly and then fails on import inside the
 driver pod, hours later; the script stops before the build instead and tells you
 which `PYVER` to re-fetch with. After building it verifies that pandas imports,
-that all 119 query files are present, that the sparkMeasure jar is in place, and
+that all 118 query files are present, that the sparkMeasure jar is in place, and
 that `tpcds_pyspark` imports with pyspark on the path.
 
 That last check puts the pyspark zips on `PYTHONPATH` itself. In these images
@@ -183,7 +183,7 @@ RESULTS_PATH=s3a://spark-k8s/results/sf1000-$(date +%F-%H%M) \
 ./run-tpcds-bench.sh
 ```
 
-Defaults: all 119 queries, `NUM_RUNS=1`, `REPEAT=1` — one pass, which is what
+Defaults: all 118 queries, `NUM_RUNS=1`, `REPEAT=1` — one pass, which is what
 tells you how long a pass takes at SF1000 before committing to more. Upstream's
 own defaults are `-n 2 -r 3`, i.e. 714 executions; raise `REPEAT` to 3 for a
 publishable median once the duration is known.
@@ -198,7 +198,7 @@ Useful knobs, all environment variables:
 | `EXECUTORS`, `EXECUTOR_CORES`, `EXECUTOR_MEMORY`, `EXECUTOR_OVERHEAD` | default 16 × 4 cores, 6g + 2g — the shape used for generation, so results are comparable |
 | `SHUFFLE_PARTITIONS` | default 2048, with AQE on top |
 | `LOG_LEVEL` | default `WARN`; a full run at `INFO` produces an unreadable log |
-| `EVENTLOG_ENABLED` | default `true`; set `false` if the event log size is a problem — 119 queries produce a large one |
+| `EVENTLOG_ENABLED` | default `true`; set `false` if the event log size is a problem — 118 queries produce a large one |
 
 ### Tuning
 
@@ -217,6 +217,43 @@ evidence behind them: the smoke run spent 75-84% of task time off-CPU.
 Apply it against a baseline run, not instead of one, and change one group at a
 time — a whole file applied at once tells you the total and nothing about which
 setting earned it.
+
+### Throughput run (several streams at once)
+
+```
+STREAMS=4 IMAGE=... K8S_MASTER=... S3_ENDPOINT=... \
+DATA_PATH=s3a://spark-k8s/tpcds_1000 \
+RESULTS_BASE=s3a://spark-k8s/results/thr-$(date +%F-%H%M) \
+./run-streams.sh
+```
+
+The workload runs one query at a time, so a stream is a separate Spark
+application. `run-streams.sh` launches them together, each with its own driver
+pod, results path and query order, waits for all of them, fetches every driver
+log, and prints one table:
+
+```
+STREAM       EXIT       WALL   EXECUTIONS     STATUS
+0               0      41m12s    118/118           ok
+...
+  throughput window : 47m30s for 4 streams
+```
+
+Each stream takes a different rotation of the query list. Running the same order
+in all of them would have every stream hit the same table at the same moment for
+the whole run, which measures queueing rather than throughput. It is not the
+permutation the TPC-DS spec defines — that comes from dsqgen — so compare these
+numbers with your own runs, not with published results.
+
+Defaults give each stream a quarter of the cluster: 3 executors x 4 cores,
+6g+2g, and a 3g/1-core driver. The script prints the total demand before
+starting — check it against the YuniKorn queue quota. If the queue cannot hold
+every pod, the drivers start, the executors stay Pending, and the run makes no
+progress.
+
+Per-query times will be worse than in a single-stream run, since each stream has
+a quarter of the machine. The number to read is the window: four streams in less
+than four times the single-stream time means the cluster had headroom.
 
 ## 6. Results
 

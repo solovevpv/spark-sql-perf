@@ -65,8 +65,8 @@ set -e
 
 ls /opt/spark/jars/spark-measure_2.12-*.jar
 
-n=$(ls /opt/tpcds-python/tpcds_pyspark/Queries | wc -l)
-[ "$n" -eq 119 ] || { echo "expected 119 query files, found $n" >&2; exit 1; }
+n=$(ls /opt/tpcds-python/tpcds_pyspark/Queries/*.sql | wc -l)
+[ "$n" -eq 118 ] || { echo "expected 118 query files, found $n" >&2; exit 1; }
 echo "query files: $n"
 
 python3 -c "import pandas, sparkmeasure; print(\"pandas\", pandas.__version__)"
