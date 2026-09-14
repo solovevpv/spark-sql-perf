@@ -36,66 +36,95 @@ docker run --rm --entrypoint python3 <base image> \
 PYVER=3.11 ./fetch-deps.sh
 ```
 
+`PYVER` must be on the same line as the command — a separate assignment is not
+exported to the script.
+
 That fills `wheels/` (pip, pandas and its dependencies, sparkmeasure,
-TPCDS_PySpark) and `jars/` (`spark-measure_2.12-0.28.jar`). Transfer this whole
-directory into the isolated segment.
+TPCDS_PySpark) and `jars/` (`spark-measure_2.12-0.28.jar`).
 
 `spark-measure_2.12-0.28` is built against Scala 2.12.18 and Spark 3.5.8, which
 matches these images exactly. The TPCDS_PySpark wheel ships its own copy built
 for **Scala 2.13** — incompatible, and the Dockerfile deletes it.
 
-## 2. Build (no network needed)
+## 2. Pack and transfer
 
-The daemon must already be able to see the base image. It is in the registry, so
-`docker build` pulls it — which needs the corporate CA trusted by the **daemon**,
-not just by the shell:
+```
+./pack-context.sh
+```
+
+That produces `tpcds-bench-context-<date>.tar.gz` and a `.sha256` beside it. The
+archive carries the wheels, the jar, the Dockerfile and the scripts — everything
+the isolated segment needs — plus a `SHA256SUMS` inside it and a `MANIFEST.txt`
+recording which Python ABI the wheels were built for.
+
+gzip rather than xz or zstd: the target CentOS 8 host has neither, and at a few
+tens of megabytes the weaker compression costs nothing worth having.
+
+Copy both files across, then verify before unpacking — a truncated SFTP transfer
+otherwise surfaces as a confusing build error much later:
+
+```
+sha256sum -c tpcds-bench-context-<date>.tar.gz.sha256
+tar -xzf tpcds-bench-context-<date>.tar.gz
+cd tpcds-bench-context
+```
+
+## 3. Build (no network needed)
+
+First make sure the daemon can reach the registry for the base image — the
+corporate CA has to be trusted by the **daemon**, not just by the shell:
 
 ```
 sudo mkdir -p /etc/docker/certs.d/negistry.ehd-zr.cbr.ru
 sudo cp <corporate-ca>.crt /etc/docker/certs.d/negistry.ehd-zr.cbr.ru/ca.crt
 docker login negistry.ehd-zr.cbr.ru
-docker pull negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-gen:2026.2.1_spark3.5.8_iceberg1.10_cb-ca
 ```
 
-Pull it explicitly first: a failure there is a registry or certificate problem,
-and separating it from the build keeps the two apart.
+Then, from the unpacked `tpcds-bench-context` directory:
 
 ```
-docker build -f Dockerfile \
-  --build-arg BASE_IMAGE=negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-gen:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
-  -t negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
-  .
+BASE_IMAGE=negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-gen:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
+TARGET_IMAGE=negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
+./build-image.sh
 ```
 
-The build context is this directory, not the repository root.
-
-Whether BuildKit is on or off makes no difference here: nothing in the Dockerfile
-needs it, and it carries no `# syntax=` directive — that directive would send
-BuildKit to Docker Hub for its frontend image, which this segment cannot reach.
-
-If `docker` needs `sudo` on this host, prefix every command with it, or add
-yourself to the `docker` group (`sudo usermod -aG docker $USER`, then log in
-again). Note that membership in that group is equivalent to root.
-
-Python packages are installed into `/opt/tpcds-python` and reached through
-`PYTHONPATH`, so the base image's own pandas/numpy are left untouched — other
-tooling in a corporate image may depend on them.
-
-Check the result before pushing:
-
-```
-docker run --rm --entrypoint python3 <built image> -c \
-  'import pandas, sparkmeasure, tpcds_pyspark, importlib.resources as r; \
-   print(pandas.__version__, len(list(r.files("tpcds_pyspark").joinpath("Queries").iterdir())))'
-```
-
-It should print the pandas version and `119`.
+`build-image.sh` re-checks `SHA256SUMS`, pulls the base image, and — the part
+worth having — compares the base image's Python against the ABI the wheels were
+built for. A mismatch there builds cleanly and then fails on import inside the
+driver pod, hours later; the script stops before the build instead and tells you
+which `PYVER` to re-fetch with. After building it verifies that pandas imports,
+that all 119 query files are present, and that the sparkMeasure jar is in place.
 
 ```
 docker push negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca
 ```
 
-## 3. Smoke test first
+### If you would rather run the build by hand
+
+```
+docker build -f Dockerfile \
+  --build-arg BASE_IMAGE=<base image> \
+  -t <target image> .
+```
+
+The build context is that directory, not the repository root.
+
+### Notes on the build
+
+Whether BuildKit is on or off makes no difference: nothing in the Dockerfile
+needs it, and it carries no `# syntax=` directive — that directive would send
+BuildKit to Docker Hub for its frontend image, which this segment cannot reach.
+
+If `docker` needs `sudo` on this host, prefix the commands with it (and pass the
+variables after `sudo`, or use `sudo -E`), or add yourself to the `docker` group
+(`sudo usermod -aG docker $USER`, then log in again). Membership in that group is
+equivalent to root.
+
+Python packages are installed into `/opt/tpcds-python` and reached through
+`PYTHONPATH`, so the base image's own pandas/numpy are left untouched — other
+tooling in a corporate image may depend on them.
+
+## 4. Smoke test first
 
 ```
 IMAGE=negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
@@ -111,7 +140,7 @@ Three queries against the SF1 dataset proves the whole path: the metrics
 listener loads, the tables map, and results reach S3. If the sparkMeasure jar
 were missing or built for the wrong Scala version, this is where it fails.
 
-## 4. Full run
+## 5. Full run
 
 ```
 IMAGE=... K8S_MASTER=... S3_ENDPOINT=... \
@@ -137,7 +166,7 @@ Useful knobs, all environment variables:
 | `LOG_LEVEL` | default `WARN`; a full run at `INFO` produces an unreadable log |
 | `EVENTLOG_ENABLED` | default `true`; set `false` if the event log size is a problem — 119 queries produce a large one |
 
-## 5. Results
+## 6. Results
 
 `RESULTS_PATH` produces three folders via Spark:
 

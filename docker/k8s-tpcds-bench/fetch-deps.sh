@@ -49,4 +49,4 @@ echo
 echo "Build context ready:"
 ls -1 wheels jars | sed 's/^/  /'
 echo
-echo "Transfer this whole directory to the isolated segment and build there."
+echo "Next: ./pack-context.sh  -- bundles this into one archive to transfer."

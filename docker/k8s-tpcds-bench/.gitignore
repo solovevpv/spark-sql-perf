@@ -1,3 +1,6 @@
 # Populated by fetch-deps.sh on a connected machine; not source.
 wheels/
 jars/
+# Produced by pack-context.sh for transfer into the isolated segment.
+tpcds-bench-context-*.tar.gz
+tpcds-bench-context-*.tar.gz.sha256
