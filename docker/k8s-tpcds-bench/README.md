@@ -28,7 +28,7 @@ The wheels must match the base image's Python, so read that version off the
 image first:
 
 ```
-podman run --rm --entrypoint python3 <base image> \
+docker run --rm --entrypoint python3 <base image> \
   -c 'import sys; print("%d.%d" % sys.version_info[:2])'
 ```
 
@@ -46,14 +46,36 @@ for **Scala 2.13** — incompatible, and the Dockerfile deletes it.
 
 ## 2. Build (no network needed)
 
+The daemon must already be able to see the base image. It is in the registry, so
+`docker build` pulls it — which needs the corporate CA trusted by the **daemon**,
+not just by the shell:
+
 ```
-podman build -f Dockerfile \
+sudo mkdir -p /etc/docker/certs.d/negistry.ehd-zr.cbr.ru
+sudo cp <corporate-ca>.crt /etc/docker/certs.d/negistry.ehd-zr.cbr.ru/ca.crt
+docker login negistry.ehd-zr.cbr.ru
+docker pull negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-gen:2026.2.1_spark3.5.8_iceberg1.10_cb-ca
+```
+
+Pull it explicitly first: a failure there is a registry or certificate problem,
+and separating it from the build keeps the two apart.
+
+```
+docker build -f Dockerfile \
   --build-arg BASE_IMAGE=negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-gen:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
   -t negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
   .
 ```
 
 The build context is this directory, not the repository root.
+
+Whether BuildKit is on or off makes no difference here: nothing in the Dockerfile
+needs it, and it carries no `# syntax=` directive — that directive would send
+BuildKit to Docker Hub for its frontend image, which this segment cannot reach.
+
+If `docker` needs `sudo` on this host, prefix every command with it, or add
+yourself to the `docker` group (`sudo usermod -aG docker $USER`, then log in
+again). Note that membership in that group is equivalent to root.
 
 Python packages are installed into `/opt/tpcds-python` and reached through
 `PYTHONPATH`, so the base image's own pandas/numpy are left untouched — other
@@ -62,7 +84,7 @@ tooling in a corporate image may depend on them.
 Check the result before pushing:
 
 ```
-podman run --rm --entrypoint python3 <built image> -c \
+docker run --rm --entrypoint python3 <built image> -c \
   'import pandas, sparkmeasure, tpcds_pyspark, importlib.resources as r; \
    print(pandas.__version__, len(list(r.files("tpcds_pyspark").joinpath("Queries").iterdir())))'
 ```
@@ -70,7 +92,7 @@ podman run --rm --entrypoint python3 <built image> -c \
 It should print the pandas version and `119`.
 
 ```
-podman push negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca
+docker push negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca
 ```
 
 ## 3. Smoke test first

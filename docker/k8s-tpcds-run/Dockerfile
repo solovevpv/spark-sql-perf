@@ -1,12 +1,10 @@
-# syntax=docker/dockerfile:1
-#
 # Adds the TPCDS_PySpark query workload to an existing Spark image, so the same
 # image that generated the data can also run the benchmark against it.
 #
 # Nothing is downloaded: the scripts come from a tarball in the build context,
 # which ADD unpacks. That makes this buildable in a network-isolated segment.
 #
-#   podman build -f docker/k8s-tpcds-run/Dockerfile \
+#   docker build -f docker/k8s-tpcds-run/Dockerfile \
 #     --build-arg BASE_IMAGE=<registry>/spark-tpcds-gen:<tag> \
 #     -t <registry>/spark-tpcds-run:<tag> .
 #
@@ -18,13 +16,17 @@
 # (for pkg_resources). Nothing here installs them, because an isolated build
 # cannot reach an index:
 #
-#   podman run --rm --entrypoint python3 <base image> \
+#   docker run --rm --entrypoint python3 <base image> \
 #     -c 'import pandas, pkg_resources, pyspark; print(pandas.__version__)'
 #
 # If that fails, put the wheels in the context and add before the USER line:
 #   COPY wheels/ /tmp/wheels/
 #   RUN python3 -m pip install --no-index --find-links=/tmp/wheels pandas \
 #       && rm -rf /tmp/wheels
+#
+# No `# syntax=` directive on purpose: with BuildKit that line makes the
+# builder fetch the docker/dockerfile frontend image from Docker Hub, which
+# an isolated segment cannot reach. Nothing here needs BuildKit anyway.
 
 ARG BASE_IMAGE=apache/spark:3.5.8
 
@@ -42,6 +44,6 @@ ADD tpcds_pyspark.tar.gz ${WORK_DIR}/
 RUN chmod -R a+rX ${WORK_DIR}/Queries ${WORK_DIR}/tpcds.py ${WORK_DIR}/tpcds_pyspark_run.py
 
 # Spark images conventionally run as UID 185; override if the base differs
-# (check with: podman inspect --format='{{.Config.User}}' <base image>).
+# (check with: docker inspect --format='{{.Config.User}}' <base image>).
 ARG RUNTIME_USER=185
 USER ${RUNTIME_USER}

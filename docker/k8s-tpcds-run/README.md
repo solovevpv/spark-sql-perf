@@ -11,7 +11,7 @@ build installs them — an isolated build has no index to install from — so
 confirm they are already there:
 
 ```
-podman run --rm --entrypoint python3 <base image> \
+docker run --rm --entrypoint python3 <base image> \
   -c 'import pandas, pkg_resources, pyspark; print(pandas.__version__)'
 ```
 
@@ -30,7 +30,7 @@ The build context must contain `tpcds_pyspark.tar.gz`, whose root holds
 build needs no network.
 
 ```
-podman build -f docker/k8s-tpcds-run/Dockerfile \
+docker build -f docker/k8s-tpcds-run/Dockerfile \
   --build-arg BASE_IMAGE=<registry>/spark-tpcds-gen:<tag> \
   -t <registry>/spark-tpcds-run:<tag> .
 ```

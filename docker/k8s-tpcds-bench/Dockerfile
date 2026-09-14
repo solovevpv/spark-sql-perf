@@ -1,11 +1,9 @@
-# syntax=docker/dockerfile:1
-#
 # Builds the TPC-DS query benchmark image: upstream TPCDS_PySpark (Luca Canali)
 # instrumented with sparkMeasure, installed from wheels already present in the
 # build context. Nothing is downloaded, so this builds in an isolated segment.
 #
 #   ./fetch-deps.sh                     # on a machine with internet
-#   podman build -f Dockerfile \
+#   docker build -f Dockerfile \
 #     --build-arg BASE_IMAGE=<registry>/spark-tpcds-gen:<tag> \
 #     -t <registry>/spark-tpcds-bench:<tag> .
 #
@@ -24,6 +22,10 @@
 # 2. The wheel's bundled jar is built for Scala 2.13 and is deleted below.
 #    These Spark images are Scala 2.12 builds; the two are not binary
 #    compatible and mixing them fails at runtime with NoSuchMethodError.
+#
+# No `# syntax=` directive on purpose: with BuildKit that line makes the
+# builder fetch the docker/dockerfile frontend image from Docker Hub, which
+# an isolated segment cannot reach. Nothing here needs BuildKit anyway.
 
 ARG BASE_IMAGE=apache/spark:3.5.8
 
@@ -62,6 +64,6 @@ RUN set -eux; \
 ENV PYTHONPATH=/opt/tpcds-python${PYTHONPATH:+:${PYTHONPATH}}
 
 # Spark images conventionally run as UID 185; override if the base differs
-# (check with: podman inspect --format='{{.Config.User}}' <base image>).
+# (check with: docker inspect --format='{{.Config.User}}' <base image>).
 ARG RUNTIME_USER=185
 USER ${RUNTIME_USER}

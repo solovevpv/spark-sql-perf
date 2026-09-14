@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # Rebases the TPC-DS generation artifacts — dsdgen and the spark-sql-perf
 # assembly jar — from an image already built with ./Dockerfile onto a different
 # Spark image (e.g. one that carries an organization's own CA bundle, Iceberg,
@@ -9,7 +7,7 @@
 # this works inside a network-isolated environment as long as both images are
 # available locally or in a reachable registry:
 #
-#   podman build -f docker/k8s-tpcds-gen/Dockerfile.rebase \
+#   docker build -f docker/k8s-tpcds-gen/Dockerfile.rebase \
 #     --build-arg TPCDS_SRC_IMAGE=<registry>/spark-tpcds-gen:3.5.8 \
 #     --build-arg SPARK_BASE_IMAGE=<registry>/spark:<tag> \
 #     -t <registry>/spark-tpcds-gen:<tag> .
@@ -17,6 +15,10 @@
 # Deliberately NOT copied: the hadoop-aws / aws-java-sdk-bundle jars that
 # ./Dockerfile installs. A Spark image that already reads and writes S3 ships
 # its own; a second copy at a different version breaks the classpath.
+#
+# No `# syntax=` directive on purpose: with BuildKit that line makes the
+# builder fetch the docker/dockerfile frontend image from Docker Hub, which
+# an isolated segment cannot reach. Nothing here needs BuildKit anyway.
 
 ARG TPCDS_SRC_IMAGE=apache/spark-tpcds-gen:3.5.8
 ARG SPARK_BASE_IMAGE=apache/spark:3.5.8
@@ -39,6 +41,6 @@ RUN chmod -R a+rX /opt/tpcds-kit /opt/spark-sql-perf \
     && chmod a+x ${DSDGEN_DIR}/dsdgen
 
 # Spark images conventionally run as UID 185; override if the base differs
-# (check with: podman inspect --format='{{.Config.User}}' <base image>).
+# (check with: docker inspect --format='{{.Config.User}}' <base image>).
 ARG RUNTIME_USER=185
 USER ${RUNTIME_USER}

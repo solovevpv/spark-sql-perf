@@ -40,7 +40,7 @@ bundle, Iceberg, S3 setup — use `Dockerfile.rebase`, which copies dsdgen and t
 assembly jar out of the image built above instead of rebuilding them:
 
 ```
-podman build -f docker/k8s-tpcds-gen/Dockerfile.rebase \
+docker build -f docker/k8s-tpcds-gen/Dockerfile.rebase \
   --build-arg TPCDS_SRC_IMAGE=<registry>/spark-tpcds-gen:3.5.8 \
   --build-arg SPARK_BASE_IMAGE=<registry>/spark:<tag> \
   -t <registry>/spark-tpcds-gen:<tag> .

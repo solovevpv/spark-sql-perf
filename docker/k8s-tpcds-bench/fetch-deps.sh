@@ -9,7 +9,7 @@
 # PYVER must be the Python of the base image, not of the machine running this —
 # the wheels are selected for that interpreter's ABI:
 #
-#   podman run --rm --entrypoint python3 <base image> \
+#   docker run --rm --entrypoint python3 <base image> \
 #     -c 'import sys; print("%d.%d" % sys.version_info[:2])'
 #
 # Two things are fetched, and the Scala one matters more than it looks. The

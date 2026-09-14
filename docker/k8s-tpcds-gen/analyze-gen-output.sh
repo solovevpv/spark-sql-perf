@@ -29,10 +29,14 @@
 #   export AWS_SECRET_ACCESS_KEY=$(kubectl get secret -n spark-workload minio-secret \
 #     -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)
 #
-#   sudo -E podman run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+#   docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
 #     --entrypoint java <spark image> -cp '/opt/spark/jars/*' \
 #     org.apache.hadoop.fs.FsShell -ls -R s3a://bucket/prefix/ > listing
 #   ./analyze-gen-output.sh listing
+#
+# The bare -e form forwards the variable from the calling shell, so if docker
+# here needs sudo it must be `sudo -E docker run` — plain sudo drops both
+# variables and the listing comes back empty with a 403.
 #
 # Hadoop needs a core-site.xml on the classpath, so put the s3a endpoint and
 # path-style settings in one and mount its directory:

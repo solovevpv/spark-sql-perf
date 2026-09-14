@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # Extends an existing Spark 3.5.8 image with everything needed to generate
 # TPC-DS data (via spark-sql-perf) on a Spark-on-Kubernetes (Deckhouse) cluster,
 # writing the output to an S3 bucket.
@@ -12,6 +10,10 @@
 # The image is used unmodified as both the driver and executor image in
 # spark-submit's --conf spark.kubernetes.container.image=... — no custom
 # ENTRYPOINT is set here, the base Spark image's own entrypoint is kept.
+#
+# No `# syntax=` directive on purpose: with BuildKit that line makes the
+# builder fetch the docker/dockerfile frontend image from Docker Hub, which
+# an isolated segment cannot reach. Nothing here needs BuildKit anyway.
 
 # ARGs used in a FROM line must be declared before the FIRST FROM in the
 # file to be visible there — declaring it between stages does not work.
