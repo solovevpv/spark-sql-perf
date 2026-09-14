@@ -40,6 +40,8 @@ set -euo pipefail
 : "${RESULTS_PATH:=}"
 : "${LOG_LEVEL:=WARN}"
 : "${EVENTLOG_ENABLED:=true}"
+: "${MINIO_SECRET:=minio-secret}"
+: "${DRIVER_POD_NAME:=}"
 : "${APP:=local:///opt/tpcds-python/tpcds_pyspark/tpcds_pyspark_run.py}"
 
 # Optional args are built as arrays so an unset value leaves nothing behind on
@@ -52,6 +54,13 @@ fi
 EXCLUDE_ARGS=()
 if [ -n "${QUERIES_EXCLUDE:-}" ]; then
   EXCLUDE_ARGS=(-x "$QUERIES_EXCLUDE")
+fi
+
+# Naming the driver pod up front is what lets a caller fetch its log afterwards
+# without scraping the submit output. Spark requires the name to be unused.
+POD_ARGS=()
+if [ -n "$DRIVER_POD_NAME" ]; then
+  POD_ARGS=(--conf spark.kubernetes.driver.pod.name="$DRIVER_POD_NAME")
 fi
 
 # Comments cannot go inside the backslash-continued command below: they would
@@ -74,10 +83,10 @@ spark-submit \
   --conf spark.sql.shuffle.partitions="${SHUFFLE_PARTITIONS}" \
   --conf spark.sql.adaptive.enabled=true \
   --conf spark.log.level="${LOG_LEVEL}" \
-  --conf spark.kubernetes.driver.secretKeyRef.AWS_ACCESS_KEY_ID=minio-secret:AWS_ACCESS_KEY_ID \
-  --conf spark.kubernetes.driver.secretKeyRef.AWS_SECRET_ACCESS_KEY=minio-secret:AWS_SECRET_ACCESS_KEY \
-  --conf spark.kubernetes.executor.secretKeyRef.AWS_ACCESS_KEY_ID=minio-secret:AWS_ACCESS_KEY_ID \
-  --conf spark.kubernetes.executor.secretKeyRef.AWS_SECRET_ACCESS_KEY=minio-secret:AWS_SECRET_ACCESS_KEY \
+  --conf spark.kubernetes.driver.secretKeyRef.AWS_ACCESS_KEY_ID="${MINIO_SECRET}":AWS_ACCESS_KEY_ID \
+  --conf spark.kubernetes.driver.secretKeyRef.AWS_SECRET_ACCESS_KEY="${MINIO_SECRET}":AWS_SECRET_ACCESS_KEY \
+  --conf spark.kubernetes.executor.secretKeyRef.AWS_ACCESS_KEY_ID="${MINIO_SECRET}":AWS_ACCESS_KEY_ID \
+  --conf spark.kubernetes.executor.secretKeyRef.AWS_SECRET_ACCESS_KEY="${MINIO_SECRET}":AWS_SECRET_ACCESS_KEY \
   --conf spark.kubernetes.scheduler.name=yunikorn \
   --conf spark.kubernetes.driver.annotation.yunikorn.apache.org/queue="${YUNIKORN_QUEUE}" \
   --conf spark.kubernetes.executor.annotation.yunikorn.apache.org/queue="${YUNIKORN_QUEUE}" \
@@ -85,6 +94,7 @@ spark-submit \
   --conf spark.eventLog.dir="${EVENTLOG_DIR:-s3a://spark-k8s/logs}" \
   --conf spark.hadoop.fs.s3a.endpoint="${S3_ENDPOINT}" \
   --conf spark.hadoop.fs.s3a.path.style.access=true \
+  "${POD_ARGS[@]}" \
   "${APP}" \
   -d "${DATA_PATH}" \
   --data_format "${DATA_FORMAT}" \

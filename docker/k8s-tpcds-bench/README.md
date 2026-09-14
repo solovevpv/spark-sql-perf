@@ -133,18 +133,46 @@ tooling in a corporate image may depend on them.
 ## 4. Smoke test first
 
 ```
-IMAGE=negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca \
-K8S_MASTER=k8s://https://<api-server> \
-S3_ENDPOINT=https://<minio> \
-DATA_PATH=s3a://spark-k8s/tpcds_1 \
-QUERIES=q1,q3,q5 \
-RESULTS_PATH=s3a://spark-k8s/results/smoke \
-./run-tpcds-bench.sh
+cp smoke.env.example smoke.env
+$EDITOR smoke.env
+./smoke-test.sh
 ```
 
-Three queries against the SF1 dataset proves the whole path: the metrics
-listener loads, the tables map, and results reach S3. If the sparkMeasure jar
-were missing or built for the wrong Scala version, this is where it fails.
+Three queries against the SF1 dataset prove the whole path end to end. The
+script checks the cluster before submitting (kubectl reachable, namespace,
+service account, MinIO secret, token file, no leftover driver pod), names the
+driver pod so the log can be fetched afterwards, saves it as
+`smoke-<timestamp>.log`, and reads the metrics back out:
+
+```
+=== Results ===
+  QUERY       ELAPSED   RUN TIME        CPU         GC    TASKS
+  q1           12.34s     45.67s     33.21s      1.02s      3.7
+  q3            5.20s     18.90s     14.30s      0.40s      3.6
+  q5            9.75s     31.40s     25.00s      0.80s      3.2
+
+  sparkMeasure: real metrics on 3 of 3 executions
+  results written to s3a://spark-k8s/results/smoke
+
+VERDICT: PASSED
+```
+
+It fails the run, not just warns, when executor run time equals elapsed time on
+every query. That is the signature of metrics that are not being collected —
+run time is the sum over tasks and elapsed time is wall clock, so on a real
+measurement they differ by roughly the number of active tasks. A workload that
+finishes cleanly while reporting nothing but wall-clock time is exactly what the
+earlier stripped-down copy did, and it is the failure this image exists to
+avoid.
+
+It also fails on a Scala or Python loading error in the log
+(`NoSuchMethodError`, `ClassNotFoundException`, `ModuleNotFoundError`), on
+fewer query executions than requested, and on `RESULTS_PATH` being set without
+the results actually being written.
+
+`smoke.env` holds your cluster values so they are typed once; it is gitignored,
+and anything already exported in your shell overrides it. `KEEP_POD=true` leaves
+the driver pod behind for inspection.
 
 ## 5. Full run
 

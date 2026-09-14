@@ -4,3 +4,6 @@ jars/
 # Produced by pack-context.sh for transfer into the isolated segment.
 tpcds-bench-context-*.tar.gz
 tpcds-bench-context-*.tar.gz.sha256
+# Local cluster settings and smoke run output.
+smoke.env
+smoke-*.log

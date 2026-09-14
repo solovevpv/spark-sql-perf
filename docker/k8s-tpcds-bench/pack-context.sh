@@ -40,7 +40,8 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/$NAME"
 
 cp -r wheels jars "$STAGE/$NAME/"
-cp Dockerfile build-image.sh run-tpcds-bench.sh README.md "$STAGE/$NAME/"
+cp Dockerfile build-image.sh run-tpcds-bench.sh smoke-test.sh smoke.env.example \
+   README.md "$STAGE/$NAME/"
 
 {
   echo "TPC-DS benchmark image build context"
