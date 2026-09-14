@@ -21,7 +21,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-: "${PYVER:?set PYVER to the Python version of the base image, e.g. PYVER=3.11 (see header)}"
+: "${PYVER:?not set. Use PYVER=3.11 ./fetch-deps.sh -- on one line, since a separate assignment is not exported to this script. See the header for reading the version off the base image.}"
 
 # The Python package and the jar are released together and their versions track
 # each other; keep them in step when bumping.
