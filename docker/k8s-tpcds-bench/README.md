@@ -93,7 +93,13 @@ worth having — compares the base image's Python against the ABI the wheels wer
 built for. A mismatch there builds cleanly and then fails on import inside the
 driver pod, hours later; the script stops before the build instead and tells you
 which `PYVER` to re-fetch with. After building it verifies that pandas imports,
-that all 119 query files are present, and that the sparkMeasure jar is in place.
+that all 119 query files are present, that the sparkMeasure jar is in place, and
+that `tpcds_pyspark` imports with pyspark on the path.
+
+That last check puts the pyspark zips on `PYTHONPATH` itself. In these images
+pyspark lives in `$SPARK_HOME/python/lib/*.zip`, which only `spark-submit` adds
+to the path — so a plain `python3 -c 'import pyspark'` inside the image fails
+even though the driver imports it without trouble.
 
 ```
 docker push negistry.ehd-zr.cbr.ru/ehd/k8s/nova/spark-tpcds-bench:2026.2.1_spark3.5.8_iceberg1.10_cb-ca

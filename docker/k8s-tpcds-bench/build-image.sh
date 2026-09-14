@@ -15,6 +15,10 @@
 # one CPython ABI; installed into an image with a different Python they build
 # fine and fail on import inside the driver pod, hours later. This compares the
 # two before spending the build.
+#
+# The post-build check adds the pyspark zips to PYTHONPATH by hand. Only
+# spark-submit puts them there, so a plain python3 import of pyspark fails in
+# one of these images even though the driver imports it fine.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -56,16 +60,29 @@ $DOCKER build -f Dockerfile --build-arg BASE_IMAGE="$BASE_IMAGE" -t "$TARGET_IMA
 
 echo
 echo "Checking the built image..."
-$DOCKER run --rm --entrypoint python3 "$TARGET_IMAGE" -c '
-import pandas, sparkmeasure, tpcds_pyspark
-from importlib.resources import files
-n = len(list(files("tpcds_pyspark").joinpath("Queries").iterdir()))
-print("pandas", pandas.__version__, "- queries:", n)
-assert n == 119, "expected 119 query files"
-'
-$DOCKER run --rm --entrypoint sh "$TARGET_IMAGE" -c \
-  'ls /opt/spark/jars/spark-measure_2.12-*.jar'
+$DOCKER run --rm --entrypoint sh "$TARGET_IMAGE" -c '
+set -e
 
-echo
+ls /opt/spark/jars/spark-measure_2.12-*.jar
+
+n=$(ls /opt/tpcds-python/tpcds_pyspark/Queries | wc -l)
+[ "$n" -eq 119 ] || { echo "expected 119 query files, found $n" >&2; exit 1; }
+echo "query files: $n"
+
+python3 -c "import pandas, sparkmeasure; print(\"pandas\", pandas.__version__)"
+
+if ! python3 -c "import pyspark" 2>/dev/null; then
+  zips=$(ls -d ${SPARK_HOME:-/opt/spark}/python/lib/*.zip 2>/dev/null | tr "\n" ":")
+  if [ -z "$zips" ]; then
+    echo "pyspark is not importable and there are no zips under ${SPARK_HOME:-/opt/spark}/python/lib" >&2
+    echo "this base image cannot run a PySpark workload" >&2
+    exit 1
+  fi
+  PYTHONPATH="$zips$PYTHONPATH"
+  export PYTHONPATH
+fi
+python3 -c "import pyspark, tpcds_pyspark; print(\"pyspark\", pyspark.__version__, \"- tpcds_pyspark imports cleanly\")"
+'
+
 echo "Built ${TARGET_IMAGE}. Push it with:"
 echo "  ${DOCKER} push ${TARGET_IMAGE}"
