@@ -9,8 +9,8 @@
 # than by bytes. The same partition count at SF1000 gives healthy files, so this
 # only bites at small scale factors.
 #
-# Takes a listing on stdin as "<bytes> <key>" per line, so it works with any S3
-# client:
+# Reads a listing from a file argument or stdin, either as "<bytes> <key>" per
+# line or as the columns hadoop fs -ls prints, so it works with any S3 client:
 #
 #   aws s3 ls --recursive s3://spark-k8s/tpcds_1/ --endpoint-url "$S3_ENDPOINT" \
 #     | awk '{ $1=""; $2=""; size=$3; $3=""; print size, substr($0,4) }' \
@@ -31,9 +31,12 @@
 #
 #   sudo -E podman run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
 #     --entrypoint java <spark image> -cp '/opt/spark/jars/*' \
-#     org.apache.hadoop.fs.FsShell -Dfs.s3a.endpoint=<endpoint> \
-#     -Dfs.s3a.path.style.access=true -ls -R s3a://bucket/prefix/ \
-#     | awk '$1 ~ /^-/ { print $5, $8 }' | ./analyze-gen-output.sh
+#     org.apache.hadoop.fs.FsShell -ls -R s3a://bucket/prefix/ > listing
+#   ./analyze-gen-output.sh listing
+#
+# Hadoop needs a core-site.xml on the classpath, so put the s3a endpoint and
+# path-style settings in one and mount its directory:
+#   -v /tmp/hconf:/hconf:ro,z  -cp '/hconf:/opt/spark/jars/*'
 #
 # With -a it runs the aws form itself, using S3_ENDPOINT and a bucket path:
 #
@@ -50,8 +53,19 @@ if [ "${1:-}" = "-a" ]; then
   exit
 fi
 
-if [ -t 0 ]; then
-  echo "usage: $0 < listing   (lines of '<bytes> <key>'; see header for aws/mc forms)" >&2
+LISTING=""
+if [ $# -ge 1 ]; then
+  [ -r "$1" ] || { echo "cannot read $1" >&2; exit 1; }
+  # A driver log here means analyze-gen-run.sh was the intended script.
+  if head -50 "$1" | grep -q "INFO SparkContext\|INFO DAGScheduler"; then
+    echo "$1 looks like a Spark driver log, not an S3 listing." >&2
+    echo "For a driver log use: ./analyze-gen-run.sh $1" >&2
+    exit 2
+  fi
+  LISTING="$1"
+elif [ -t 0 ]; then
+  echo "usage: $0 <listing-file>" >&2
+  echo "       $0 < listing        (lines of '<bytes> <key>', or hadoop fs -ls output)" >&2
   echo "       $0 -a s3://bucket/prefix/" >&2
   exit 2
 fi
@@ -65,9 +79,18 @@ function human(b) {
 }
 
 {
-  size = $1
-  key = $2
-  for (i = 3; i <= NF; i++) key = key " " $i
+  # Accept either "<bytes> <key>" or the columns hadoop fs -ls -R prints
+  # (perms, replication, owner, group, size, date, time, path).
+  if ($1 ~ /^[-d][rwxst@+-]{9}/ && NF >= 8) {
+    if ($1 ~ /^d/) next
+    size = $5; key = $8
+    for (i = 9; i <= NF; i++) key = key " " $i
+  } else {
+    size = $1; key = $2
+    for (i = 3; i <= NF; i++) key = key " " $i
+  }
+  # Skips blank lines and headers such as hadoop'"'"'s "Found N items".
+  if (size !~ /^[0-9]+$/ || key == "") next
 
   # Keys look like <prefix>/<table>/[<col>=<value>/]<file>, and uncommitted
   # ones like <prefix>/<table>/_temporary/<job>/<task>/<file>. In both the table
@@ -123,4 +146,4 @@ END {
            "  overhead dominates the write; see the README on partitioning.\n", small
   printf "\n"
 }
-'
+' "${LISTING:--}"
