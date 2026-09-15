@@ -28,8 +28,8 @@ set -euo pipefail
 : "${YUNIKORN_QUEUE:=root.default}"
 : "${EXECUTORS:=16}"
 : "${EXECUTOR_CORES:=4}"
-: "${EXECUTOR_MEMORY:=6g}"
-: "${EXECUTOR_OVERHEAD:=2g}"
+: "${EXECUTOR_MEMORY:=5g}"
+: "${EXECUTOR_OVERHEAD:=3g}"
 : "${DRIVER_MEMORY:=8g}"
 : "${SHUFFLE_PARTITIONS:=2048}"
 : "${QUERIES:=all}"
@@ -80,6 +80,23 @@ fi
 POD_ARGS=()
 if [ -n "$DRIVER_POD_NAME" ]; then
   POD_ARGS=(--conf spark.kubernetes.driver.pod.name="$DRIVER_POD_NAME")
+fi
+
+# A run at WARN keeps no record of how it was configured, and reconstructing
+# that afterwards from a failed three-hour log is not possible. Print it.
+cat >&2 <<SETTINGS
+tpcds-bench settings
+  image      : ${IMAGE}
+  data       : ${DATA_PATH}
+  queries    : ${QUERIES}  (${NUM_RUNS} run(s) x ${REPEAT} repeat(s))
+  executors  : ${EXECUTORS} x ${EXECUTOR_CORES} cores, ${EXECUTOR_MEMORY} heap + ${EXECUTOR_OVERHEAD} overhead
+  driver     : ${DRIVER_MEMORY}, ${DRIVER_CORES} core(s)
+  shuffle    : ${SHUFFLE_PARTITIONS} partitions
+  results    : ${RESULTS_PATH:-none (driver log only)}
+  tuning     : ${TUNING_CONF:-none}
+SETTINGS
+if [ -n "$TUNING_CONF" ]; then
+  sed -n 's/^\([a-z].*\)/    \1/p' "$TUNING_CONF" >&2
 fi
 
 # Comments cannot go inside the backslash-continued command below: they would
